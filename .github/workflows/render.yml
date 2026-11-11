@@ -72,19 +72,16 @@ jobs:
           echo "frame_end=${{ github.event.inputs.frame_end || '1' }}" >> $GITHUB_OUTPUT
           echo "output_format=${{ github.event.inputs.output_format || 'PNG' }}" >> $GITHUB_OUTPUT
 
-      - name: Install Blender
+      - name: Install dependencies
         run: |
-          # Retry apt-get update in case of transient DNS issues
-          for i in 1 2 3; do
-            sudo apt-get update && break
-            echo "Retry $i..."
-            sleep 10
-          done
+          # Most deps are pre-installed on the runner; install only what's missing
+          # Use --fix-missing and allow failures for non-critical packages
+          sudo apt-get update || true
+          sudo apt-get install -y --fix-missing xvfb libxi6 libxxf86vm1 \
+            libgl1 libglx-mesa0 libxkbcommon0 libsm6 || true
 
-          sudo apt-get install -y wget xvfb libxi6 libxxf86vm1 \
-            libgl1 libglx-mesa0 libegl1 libxkbcommon0 libsm6
-
-          # Download Blender 4.2 LTS
+      - name: Download Blender
+        run: |
           BLENDER_VERSION="4.2.0"
           BLENDER_TAR="blender-${BLENDER_VERSION}-linux-x64.tar.xz"
           BLENDER_URL="https://download.blender.org/release/Blender4.2/${BLENDER_TAR}"
