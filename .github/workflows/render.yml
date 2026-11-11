@@ -56,8 +56,14 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          lfs: true  # in case .blend files are stored with Git LFS
+
+      - name: Verify blend file
+        run: |
+          BLEND="${{ github.event.inputs.blend_file || 'scene.blend' }}"
+          echo "Checking file: ${BLEND}"
+          ls -la "${BLEND}"
+          file "${BLEND}"
+          xxd -l 16 "${BLEND}"
 
       - name: Set render parameters
         id: params
