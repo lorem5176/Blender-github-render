@@ -51,24 +51,15 @@ on:
 jobs:
   render:
     runs-on: ubuntu-24.04
-    timeout-minutes: 350  # just under the 6-hour GitHub Actions limit
+    timeout-minutes: 350
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Verify blend file
-        run: |
-          BLEND="${{ github.event.inputs.blend_file || 'scene.blend' }}"
-          echo "Checking file: ${BLEND}"
-          ls -la "${BLEND}"
-          file "${BLEND}"
-          xxd -l 16 "${BLEND}"
-
       - name: Set render parameters
         id: params
         run: |
-          # Use workflow_dispatch inputs if available, otherwise defaults
           echo "blend_file=${{ github.event.inputs.blend_file || 'scene.blend' }}" >> $GITHUB_OUTPUT
           echo "render_engine=${{ github.event.inputs.render_engine || 'CYCLES' }}" >> $GITHUB_OUTPUT
           echo "samples=${{ github.event.inputs.samples || '256' }}" >> $GITHUB_OUTPUT
@@ -78,29 +69,23 @@ jobs:
           echo "frame_end=${{ github.event.inputs.frame_end || '1' }}" >> $GITHUB_OUTPUT
           echo "output_format=${{ github.event.inputs.output_format || 'PNG' }}" >> $GITHUB_OUTPUT
 
-      - name: Install dependencies
+      - name: Verify blend file
         run: |
-          # Most deps are pre-installed on the runner; install only what's missing
-          # Use --fix-missing and allow failures for non-critical packages
+          BLEND="${{ steps.params.outputs.blend_file }}"
+          echo "Checking file: ${BLEND}"
+          ls -la "${BLEND}"
+          file "${BLEND}"
+
+      - name: Install system dependencies
+        run: |
           sudo apt-get update || true
           sudo apt-get install -y --fix-missing xvfb libxi6 libxxf86vm1 \
-            libgl1 libglx-mesa0 libxkbcommon0 libsm6 || true
+            libgl1 libglx-mesa0 libxkbcommon0 libsm6 zstd wget xz-utils || true
 
-      - name: Download Blender
+      - name: Install matching Blender version
         run: |
-          BLENDER_VERSION="4.2.0"
-          BLENDER_TAR="blender-${BLENDER_VERSION}-linux-x64.tar.xz"
-          BLENDER_URL="https://download.blender.org/release/Blender4.2/${BLENDER_TAR}"
-
-          echo "Downloading Blender ${BLENDER_VERSION}..."
-          wget -q --retry-connrefused --tries=3 "${BLENDER_URL}"
-          tar -xf "${BLENDER_TAR}"
-          BLENDER_DIR=$(ls -d blender-*-linux-x64)
-          echo "${PWD}/${BLENDER_DIR}" >> $GITHUB_PATH
-          echo "BLENDER_DIR=${PWD}/${BLENDER_DIR}" >> $GITHUB_ENV
-
-          # Verify installation
-          "${PWD}/${BLENDER_DIR}/blender" --version
+          python3 setup_blender.py "${{ steps.params.outputs.blend_file }}"
+          blender --version
 
       - name: Render
         run: |
@@ -117,7 +102,6 @@ jobs:
           echo "  Format:      ${{ steps.params.outputs.output_format }}"
           echo "============================================"
 
-          # Run Blender headless with a virtual display (needed for some GPU-related init)
           xvfb-run -a blender \
             --background "${{ steps.params.outputs.blend_file }}" \
             --python render_settings.py \

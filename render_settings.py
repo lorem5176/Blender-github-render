@@ -2,10 +2,7 @@
 Blender Render Settings Script
 -------------------------------
 Called by the GitHub Actions workflow to configure and launch a render.
-Applies high-quality settings based on CLI arguments.
-
-Usage (called automatically by the workflow):
-  blender --background scene.blend --python render_settings.py -- [options]
+Compatible with Blender 4.x and 5.x.
 """
 
 import bpy
@@ -23,7 +20,7 @@ def parse_args():
 
     parser = argparse.ArgumentParser(description="Blender render settings")
     parser.add_argument("--engine", type=str, default="CYCLES",
-                        choices=["CYCLES", "BLENDER_EEVEE_NEXT"],
+                        choices=["CYCLES", "BLENDER_EEVEE_NEXT", "BLENDER_EEVEE"],
                         help="Render engine to use")
     parser.add_argument("--samples", type=int, default=256,
                         help="Number of render samples")
@@ -44,16 +41,19 @@ def parse_args():
 
 
 def configure_high_quality(scene, args):
-    """Apply high-quality render settings."""
+    """Apply high-quality render settings safely across Blender versions."""
 
     # --- Render engine ---
-    scene.render.engine = args.engine
-    print(f"[Config] Engine: {args.engine}")
+    try:
+        scene.render.engine = args.engine
+        print(f"[Config] Engine: {args.engine}")
+    except Exception as e:
+        print(f"[Config] Engine error ({args.engine}): {e}")
 
     # --- Resolution ---
     scene.render.resolution_x = args.resolution_x
     scene.render.resolution_y = args.resolution_y
-    scene.render.resolution_percentage = 100  # full resolution, no downscaling
+    scene.render.resolution_percentage = 100
     print(f"[Config] Resolution: {args.resolution_x}x{args.resolution_y} @ 100%")
 
     # --- Output ---
@@ -61,7 +61,7 @@ def configure_high_quality(scene, args):
     scene.render.image_settings.file_format = args.output_format
     if args.output_format == "PNG":
         scene.render.image_settings.color_mode = "RGBA"
-        scene.render.image_settings.color_depth = "16"  # 16-bit for quality
+        scene.render.image_settings.color_depth = "16"
         scene.render.image_settings.compression = 15
     elif args.output_format == "JPEG":
         scene.render.image_settings.quality = 95
@@ -70,10 +70,11 @@ def configure_high_quality(scene, args):
         scene.render.image_settings.exr_codec = "ZIP"
     elif args.output_format == "FFMPEG":
         scene.render.image_settings.file_format = "FFMPEG"
-        scene.render.ffmpeg.format = "MPEG4"
-        scene.render.ffmpeg.codec = "H264"
-        scene.render.ffmpeg.constant_rate_factor = "HIGH"
-        scene.render.ffmpeg.ffmpeg_preset = "GOOD"
+        if hasattr(scene.render, "ffmpeg"):
+            scene.render.ffmpeg.format = "MPEG4"
+            scene.render.ffmpeg.codec = "H264"
+            scene.render.ffmpeg.constant_rate_factor = "HIGH"
+            scene.render.ffmpeg.ffmpeg_preset = "GOOD"
     print(f"[Config] Format: {args.output_format}")
 
     # --- Frame range ---
@@ -81,81 +82,70 @@ def configure_high_quality(scene, args):
     scene.frame_end = args.frame_end
     print(f"[Config] Frames: {args.frame_start} - {args.frame_end}")
 
-    # --- Engine-specific high quality settings ---
-    if args.engine == "CYCLES":
+    # --- Engine specific settings ---
+    if "CYCLES" in scene.render.engine:
         cycles = scene.cycles
+        cycles.device = "CPU"
+        print("[Config] Device: CPU")
 
         # Samples
         cycles.samples = args.samples
-        cycles.preview_samples = 32
+        if hasattr(cycles, "preview_samples"):
+            cycles.preview_samples = min(32, args.samples)
         print(f"[Config] Cycles samples: {args.samples}")
 
-        # Denoising (built-in OpenImageDenoise for CPU)
-        cycles.use_denoising = True
-        cycles.denoiser = "OPENIMAGEDENOISE"
-        cycles.denoising_input_passes = "RGB_ALBEDO_NORMAL"
-        print("[Config] Denoising: OpenImageDenoise (RGB+Albedo+Normal)")
+        # Denoising
+        if hasattr(cycles, "use_denoising"):
+            cycles.use_denoising = True
+            if hasattr(cycles, "denoiser"):
+                cycles.denoiser = "OPENIMAGEDENOISE"
+            if hasattr(cycles, "denoising_input_passes"):
+                try:
+                    cycles.denoising_input_passes = "RGB_ALBEDO_NORMAL"
+                except Exception:
+                    pass
+            print("[Config] Denoising: OpenImageDenoise")
 
-        # Light paths — high quality bounces
-        cycles.max_bounces = 12
-        cycles.diffuse_bounces = 8
-        cycles.glossy_bounces = 8
-        cycles.transmission_bounces = 12
-        cycles.volume_bounces = 4
-        cycles.transparent_max_bounces = 16
-        print("[Config] Light paths: High quality (12 max bounces)")
+        # Light bounces
+        for prop, val in [
+            ("max_bounces", 12),
+            ("diffuse_bounces", 8),
+            ("glossy_bounces", 8),
+            ("transmission_bounces", 12),
+            ("volume_bounces", 4),
+            ("transparent_max_bounces", 16),
+            ("use_adaptive_sampling", True),
+            ("adaptive_threshold", 0.01),
+            ("adaptive_min_samples", 64),
+            ("sample_clamp_indirect", 10.0),
+        ]:
+            if hasattr(cycles, prop):
+                try:
+                    setattr(cycles, prop, val)
+                except Exception:
+                    pass
+        print("[Config] Light paths & adaptive sampling configured")
 
-        # Use CPU (GitHub Actions runners don't have GPUs)
-        cycles.device = "CPU"
-        # Optimize tile size for CPU rendering
-        scene.render.tile_x = 64 if hasattr(scene.render, 'tile_x') else 64
-        scene.render.tile_y = 64 if hasattr(scene.render, 'tile_y') else 64
-        print("[Config] Device: CPU")
-
-        # Adaptive sampling for efficiency
-        cycles.use_adaptive_sampling = True
-        cycles.adaptive_threshold = 0.01  # low threshold = high quality
-        cycles.adaptive_min_samples = 64
-        print("[Config] Adaptive sampling: ON (threshold 0.01)")
-
-        # Clamp for firefly reduction
-        cycles.sample_clamp_indirect = 10.0
-        print("[Config] Indirect clamp: 10.0")
-
-    elif args.engine == "BLENDER_EEVEE_NEXT":
+    elif "EEVEE" in scene.render.engine:
         eevee = scene.eevee
-
-        # Samples
-        eevee.taa_render_samples = args.samples
+        for prop, val in [
+            ("taa_render_samples", args.samples),
+            ("use_raytracing", True),
+            ("shadow_ray_count", 4),
+            ("shadow_step_count", 16),
+            ("use_shadow_high_bitdepth", True),
+            ("use_soft_shadows", True),
+            ("use_gtao", True),
+            ("use_ssr", True),
+        ]:
+            if hasattr(eevee, prop):
+                try:
+                    setattr(eevee, prop, val)
+                except Exception:
+                    pass
         print(f"[Config] EEVEE samples: {args.samples}")
 
-        # Shadows — high quality
-        eevee.shadow_cube_size = "2048"
-        eevee.shadow_cascade_size = "2048"
-        eevee.use_shadow_high_bitdepth = True
-        eevee.use_soft_shadows = True
-        print("[Config] EEVEE shadows: High quality (2048)")
-
-        # Ambient Occlusion
-        eevee.use_gtao = True
-        eevee.gtao_distance = 1.0
-        eevee.gtao_quality = 1.0
-        print("[Config] EEVEE AO: Enabled")
-
-        # Screen Space Reflections
-        eevee.use_ssr = True
-        eevee.use_ssr_halfres = False  # full resolution
-        eevee.ssr_quality = 1.0
-        eevee.ssr_max_roughness = 0.5
-        print("[Config] EEVEE SSR: Full resolution")
-
-    # --- Color management ---
-    scene.display_settings.display_device = "sRGB"
-    scene.view_settings.view_transform = "Filmic"
-    scene.view_settings.look = "None"
-    print("[Config] Color: Filmic / sRGB")
-
-    # --- Performance (optimize for CI runner: ~4 CPU cores) ---
+    # --- Threads ---
     scene.render.threads_mode = "AUTO"
     print("[Config] Threads: Auto")
 
@@ -165,7 +155,7 @@ def main():
     scene = bpy.context.scene
 
     print("\n" + "=" * 50)
-    print("  Applying High-Quality Render Settings")
+    print("  Applying Render Settings")
     print("=" * 50)
 
     configure_high_quality(scene, args)
@@ -174,14 +164,11 @@ def main():
     print("  Starting Render...")
     print("=" * 50 + "\n")
 
-    # Render
     if args.frame_start == args.frame_end:
-        # Single frame
         scene.frame_set(args.frame_start)
         bpy.ops.render.render(write_still=True)
         print(f"\n✅ Frame {args.frame_start} rendered successfully!")
     else:
-        # Animation
         bpy.ops.render.render(animation=True)
         print(f"\n✅ Animation (frames {args.frame_start}-{args.frame_end}) rendered!")
 
