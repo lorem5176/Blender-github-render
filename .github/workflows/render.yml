@@ -1,0 +1,154 @@
+name: Blender Render
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      blend_file:
+        description: "Path to .blend file (relative to repo root)"
+        required: true
+        default: "scene.blend"
+      render_engine:
+        description: "Render engine"
+        required: true
+        default: "CYCLES"
+        type: choice
+        options:
+          - CYCLES
+          - BLENDER_EEVEE_NEXT
+      samples:
+        description: "Render samples (higher = better quality, slower)"
+        required: true
+        default: "256"
+      resolution_x:
+        description: "Resolution width"
+        required: true
+        default: "1920"
+      resolution_y:
+        description: "Resolution height"
+        required: true
+        default: "1080"
+      frame_start:
+        description: "Start frame (for animation)"
+        required: true
+        default: "1"
+      frame_end:
+        description: "End frame (set same as start for single image)"
+        required: true
+        default: "1"
+      output_format:
+        description: "Output format"
+        required: true
+        default: "PNG"
+        type: choice
+        options:
+          - PNG
+          - JPEG
+          - OPEN_EXR
+          - FFMPEG
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350  # just under the 6-hour GitHub Actions limit
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          lfs: true  # in case .blend files are stored with Git LFS
+
+      - name: Set render parameters
+        id: params
+        run: |
+          # Use workflow_dispatch inputs if available, otherwise defaults
+          echo "blend_file=${{ github.event.inputs.blend_file || 'scene.blend' }}" >> $GITHUB_OUTPUT
+          echo "render_engine=${{ github.event.inputs.render_engine || 'CYCLES' }}" >> $GITHUB_OUTPUT
+          echo "samples=${{ github.event.inputs.samples || '256' }}" >> $GITHUB_OUTPUT
+          echo "resolution_x=${{ github.event.inputs.resolution_x || '1920' }}" >> $GITHUB_OUTPUT
+          echo "resolution_y=${{ github.event.inputs.resolution_y || '1080' }}" >> $GITHUB_OUTPUT
+          echo "frame_start=${{ github.event.inputs.frame_start || '1' }}" >> $GITHUB_OUTPUT
+          echo "frame_end=${{ github.event.inputs.frame_end || '1' }}" >> $GITHUB_OUTPUT
+          echo "output_format=${{ github.event.inputs.output_format || 'PNG' }}" >> $GITHUB_OUTPUT
+
+      - name: Install Blender
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y snapd wget xvfb libxi6 libxxf86vm1 libgl1-mesa-glx
+
+          # Download Blender 4.2 LTS (latest stable)
+          BLENDER_VERSION="4.2.5"
+          BLENDER_TAR="blender-${BLENDER_VERSION}-linux-x64.tar.xz"
+          BLENDER_URL="https://download.blender.org/release/Blender4.2/${BLENDER_TAR}"
+
+          echo "Downloading Blender ${BLENDER_VERSION}..."
+          wget -q "${BLENDER_URL}"
+          tar -xf "${BLENDER_TAR}"
+          BLENDER_DIR=$(ls -d blender-*-linux-x64)
+          echo "${PWD}/${BLENDER_DIR}" >> $GITHUB_PATH
+          echo "BLENDER_DIR=${PWD}/${BLENDER_DIR}" >> $GITHUB_ENV
+
+          # Verify installation
+          "${PWD}/${BLENDER_DIR}/blender" --version
+
+      - name: Render
+        run: |
+          mkdir -p output
+
+          echo "============================================"
+          echo "  Blender Render Configuration"
+          echo "============================================"
+          echo "  File:        ${{ steps.params.outputs.blend_file }}"
+          echo "  Engine:      ${{ steps.params.outputs.render_engine }}"
+          echo "  Samples:     ${{ steps.params.outputs.samples }}"
+          echo "  Resolution:  ${{ steps.params.outputs.resolution_x }}x${{ steps.params.outputs.resolution_y }}"
+          echo "  Frames:      ${{ steps.params.outputs.frame_start }} - ${{ steps.params.outputs.frame_end }}"
+          echo "  Format:      ${{ steps.params.outputs.output_format }}"
+          echo "============================================"
+
+          # Run Blender headless with a virtual display (needed for some GPU-related init)
+          xvfb-run -a blender \
+            --background "${{ steps.params.outputs.blend_file }}" \
+            --python render_settings.py \
+            -- \
+            --engine "${{ steps.params.outputs.render_engine }}" \
+            --samples "${{ steps.params.outputs.samples }}" \
+            --resolution_x "${{ steps.params.outputs.resolution_x }}" \
+            --resolution_y "${{ steps.params.outputs.resolution_y }}" \
+            --frame_start "${{ steps.params.outputs.frame_start }}" \
+            --frame_end "${{ steps.params.outputs.frame_end }}" \
+            --output_format "${{ steps.params.outputs.output_format }}" \
+            --output_path "//output/render_"
+
+      - name: Upload rendered output
+        uses: actions/upload-artifact@v4
+        with:
+          name: blender-render-${{ github.run_number }}
+          path: output/
+          retention-days: 90
+          if-no-files-found: error
+
+      - name: Render summary
+        if: always()
+        run: |
+          echo "## 🎨 Render Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Setting | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| File | \`${{ steps.params.outputs.blend_file }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Engine | ${{ steps.params.outputs.render_engine }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Samples | ${{ steps.params.outputs.samples }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Resolution | ${{ steps.params.outputs.resolution_x }}×${{ steps.params.outputs.resolution_y }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Frames | ${{ steps.params.outputs.frame_start }}–${{ steps.params.outputs.frame_end }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Format | ${{ steps.params.outputs.output_format }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ -d output ] && [ "$(ls -A output)" ]; then
+            FILE_COUNT=$(ls -1 output/ | wc -l)
+            echo "✅ **${FILE_COUNT} file(s) rendered successfully.**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Download from the **Artifacts** section above." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **No output files were produced.** Check the logs above." >> $GITHUB_STEP_SUMMARY
+          fi
