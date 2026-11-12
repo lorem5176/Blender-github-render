@@ -1,0 +1,135 @@
+name: Blender Parallel Render (10x Speed)
+
+on:
+  workflow_dispatch:
+    inputs:
+      blend_file:
+        description: "Path to .blend file (relative to repo root)"
+        required: true
+        default: "scene.blend"
+      render_engine:
+        description: "Render engine"
+        required: true
+        default: "CYCLES"
+        type: choice
+        options:
+          - CYCLES
+          - BLENDER_EEVEE
+      samples:
+        description: "Render samples (48 is ideal balance with denoising; 64 for maximum quality)"
+        required: true
+        default: "48"
+      resolution_x:
+        description: "Resolution width"
+        required: true
+        default: "1920"
+      resolution_y:
+        description: "Resolution height"
+        required: true
+        default: "1080"
+      frame_start:
+        description: "Start frame"
+        required: true
+        default: "1"
+      frame_end:
+        description: "End frame"
+        required: true
+        default: "100"
+      fps:
+        description: "Frames per second for output MP4"
+        required: true
+        default: "24"
+
+jobs:
+  render-workers:
+    name: Worker ${{ matrix.chunk + 1 }}/10
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    strategy:
+      matrix:
+        chunk: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+      fail-fast: false
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update || true
+          sudo apt-get install -y --fix-missing xvfb libxi6 libxxf86vm1 \
+            libgl1 libglx-mesa0 libxkbcommon0 libsm6 zstd wget xz-utils || true
+
+      - name: Install matching Blender version
+        run: |
+          python3 setup_blender.py "${{ github.event.inputs.blend_file }}"
+
+      - name: Render frame chunk
+        run: |
+          python3 render_chunk.py \
+            --chunk ${{ matrix.chunk }} \
+            --total-chunks 10 \
+            --frame-start ${{ github.event.inputs.frame_start }} \
+            --frame-end ${{ github.event.inputs.frame_end }} \
+            --blend-file "${{ github.event.inputs.blend_file }}" \
+            --engine "${{ github.event.inputs.render_engine }}" \
+            --samples ${{ github.event.inputs.samples }} \
+            --resolution-x ${{ github.event.inputs.resolution_x }} \
+            --resolution-y ${{ github.event.inputs.resolution_y }}
+
+      - name: Upload chunk frames
+        uses: actions/upload-artifact@v4
+        with:
+          name: frames-chunk-${{ matrix.chunk }}
+          path: output/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  assemble-mp4:
+    name: Assemble Final MP4 Video
+    needs: render-workers
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download all rendered chunk frames
+        uses: actions/download-artifact@v4
+        with:
+          pattern: frames-chunk-*
+          path: downloaded_chunks/
+          merge-multiple: true
+
+      - name: Install ffmpeg
+        run: |
+          sudo apt-get update || true
+          sudo apt-get install -y ffmpeg
+
+      - name: Stitch frames to MP4
+        run: |
+          mkdir -p final_output
+          FRAME_COUNT=$(find downloaded_chunks -name "frame_*.png" | wc -l)
+          echo "Total frames collected across all 10 workers: ${FRAME_COUNT}"
+
+          if [ "${FRAME_COUNT}" -gt 0 ]; then
+            ffmpeg -y -framerate "${{ github.event.inputs.fps }}" \
+              -pattern_type glob -i 'downloaded_chunks/frame_*.png' \
+              -c:v libx264 -pix_fmt yuv420p -crf 18 -preset medium \
+              final_output/rendered_animation.mp4
+          fi
+
+          ls -lh final_output/
+
+      - name: Upload final video
+        uses: actions/upload-artifact@v4
+        with:
+          name: final-animation-${{ github.run_number }}
+          path: final_output/
+          retention-days: 90
+          if-no-files-found: error
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## 🚀 10x Parallel Render Complete" >> $GITHUB_STEP_SUMMARY
+          if [ -f final_output/rendered_animation.mp4 ]; then
+            echo "✅ **rendered_animation.mp4 successfully created!**" >> $GITHUB_STEP_SUMMARY
+            echo "Download it in the **Artifacts** section above." >> $GITHUB_STEP_SUMMARY
+          fi
