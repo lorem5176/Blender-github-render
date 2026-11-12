@@ -19,9 +19,9 @@ def parse_args():
         argv = []
 
     parser = argparse.ArgumentParser(description="Blender render settings")
-    parser.add_argument("--engine", type=str, default="CYCLES",
-                        choices=["CYCLES", "BLENDER_EEVEE_NEXT", "BLENDER_EEVEE"],
-                        help="Render engine to use")
+    parser.add_argument("--engine", type=str, default="AUTO",
+                        choices=["AUTO", "CYCLES", "BLENDER_EEVEE_NEXT", "BLENDER_EEVEE"],
+                        help="Render engine to use (AUTO uses whatever engine is saved in the .blend file)")
     parser.add_argument("--samples", type=int, default=256,
                         help="Number of render samples")
     parser.add_argument("--resolution_x", type=int, default=1920,
@@ -50,11 +50,14 @@ def configure_high_quality(scene, args):
         args.frame_end = scene.frame_end
 
     # --- Render engine ---
-    try:
-        scene.render.engine = args.engine
-        print(f"[Config] Engine: {args.engine}")
-    except Exception as e:
-        print(f"[Config] Engine error ({args.engine}): {e}")
+    if args.engine and args.engine != "AUTO":
+        try:
+            scene.render.engine = args.engine
+            print(f"[Config] Engine override: {args.engine}")
+        except Exception as e:
+            print(f"[Config] Engine error ({args.engine}): {e}")
+    else:
+        print(f"[Config] Using blend file's engine: {scene.render.engine}")
 
     # --- Resolution ---
     scene.render.resolution_x = args.resolution_x

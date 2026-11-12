@@ -1,99 +1,43 @@
-# 🎨 Blender GitHub Render
+# 🎨 Blender GitHub Render (20x Parallel Cloud Farm)
 
-Render Blender projects for free using GitHub Actions — no GPU or local compute needed.
+Render your Blender animations in parallel using 20 simultaneous GitHub Actions cloud runners for free — no local CPU or GPU heat needed.
+
+## How It Works
+
+- **20 Parallel Cloud Workers:** Your total frames are divided equally across 20 runners (e.g. 100 frames = 5 frames/runner; 2,000 frames = 100 frames/runner).
+- **Auto Engine Detection:** Automatically uses whatever render engine is saved in your `.blend` file (EEVEE, Cycles), or lets you override it.
+- **Auto Frame Range:** Automatically detects the start and end frames from your project file if set to `0`.
+- **Automatic MP4 Video:** Once all 20 workers finish rendering, a final job collects all frames and compiles them into a 1080p `rendered_animation.mp4` file.
+- **Manual Trigger Only:** Pushing commits will **never** start a render automatically. You trigger renders when you are ready.
+
+---
 
 ## Quick Start
 
-### 1. Push your `.blend` file
+### 1. Update / Push your `.blend` file
 
-Copy your Blender project file into this repo root (name it `scene.blend` or update the workflow):
-
-```bash
-cp /path/to/your/project.blend scene.blend
-git add .
-git commit -m "Add scene"
-git push
-```
-
-### 2. Trigger a render
-
-**Option A — Automatic:** Every push to `main` triggers a render of `scene.blend` with default settings.
-
-**Option B — Manual (recommended):** Go to your repo → **Actions** → **Blender Render** → **Run workflow**, and configure:
-
-| Parameter      | Default          | Description                              |
-| -------------- | ---------------- | ---------------------------------------- |
-| `blend_file`   | `scene.blend`    | Path to your `.blend` file               |
-| `render_engine`| `CYCLES`         | `CYCLES` or `BLENDER_EEVEE_NEXT`        |
-| `samples`      | `256`            | Render samples (higher = better)         |
-| `resolution_x` | `1920`           | Width in pixels                          |
-| `resolution_y` | `1080`           | Height in pixels                         |
-| `frame_start`  | `1`              | First frame to render                    |
-| `frame_end`    | `1`              | Last frame (same as start = single image)|
-| `output_format`| `PNG`            | `PNG`, `JPEG`, `OPEN_EXR`, or `FFMPEG`  |
-
-### 3. Download your render
-
-Once the workflow finishes:
-1. Go to **Actions** → click the completed run
-2. Scroll to **Artifacts**
-3. Download `blender-render-<run-number>.zip`
-
-## High-Quality Settings Applied Automatically
-
-The render script (`render_settings.py`) applies these high-quality defaults:
-
-- **Full resolution** (100%, no downscaling)
-- **16-bit PNG** output with RGBA
-- **Cycles:** OpenImageDenoise, 12 max bounces, adaptive sampling (0.01 threshold), firefly clamping
-- **EEVEE:** High-res shadows (2048), full-res SSR, ambient occlusion
-- **Filmic** color management
-
-## Limits & Tips
-
-| Aspect               | Limit                                      |
-| --------------------- | ------------------------------------------ |
-| **Max run time**      | ~6 hours per job                           |
-| **CPU**               | 4 cores (GitHub-hosted runner)             |
-| **RAM**               | ~16 GB                                     |
-| **GPU**               | ❌ None (CPU rendering only)              |
-| **File size**         | Use Git LFS for files > 50 MB             |
-| **Free tier (public)**| 2,000 minutes/month                        |
-| **Free tier (private)**| 500 minutes/month                         |
-
-### Tips for faster renders
-- Use **EEVEE** instead of Cycles for faster (but less realistic) renders
-- Lower samples to `128` for test renders, increase to `512+` for final
-- Enable **adaptive sampling** (already configured) to skip converged pixels
-- Reduce resolution for previews
-- For animations, split frame ranges across multiple workflow runs
-
-## File Structure
-
-```
-├── .github/workflows/
-│   └── render.yml          # GitHub Actions workflow
-├── render_settings.py      # Blender Python render config
-├── scene.blend             # ← Your Blender file goes here
-├── .gitattributes          # Git LFS tracking rules
-├── .gitignore
-└── README.md
-```
-
-## Large Files (Git LFS)
-
-`.blend` files are often large. This repo is pre-configured with Git LFS. Set it up:
+Save your Blender file as `scene.blend` in this folder:
 
 ```bash
-# Install Git LFS (one-time)
-brew install git-lfs     # macOS
-git lfs install
-
-# Then just commit normally — .blend files auto-tracked via .gitattributes
 git add scene.blend
-git commit -m "Add scene"
+git commit -m "Update scene"
 git push
 ```
+*(Pushing will NOT trigger a build automatically).*
 
-> **Note:** GitHub free accounts get 1 GB of LFS storage and 1 GB/month bandwidth.
-> For larger projects, consider compressing textures or packing them into the `.blend` file.
+### 2. Launch the 20x Parallel Render
+
+1. Go to your repo on GitHub: **Actions** tab
+2. Click **Blender Parallel Render (20x Speed)** on the left sidebar
+3. Click **Run workflow**:
+   - `frame_end`: Enter `0` to auto-detect full length, or enter any specific number (e.g. `100`, `2000`).
+   - `render_engine`: `AUTO` (uses the engine saved in your `.blend` file).
+   - `samples`: `48` (clean & fast with denoising).
+4. Click **Run workflow**.
+
+### 3. Download Your Video
+
+Once all 20 workers complete:
+1. Open the completed run.
+2. Scroll to **Artifacts** at the bottom.
+3. Download `final-animation-<number>.zip` — inside will be **`rendered_animation.mp4`**!

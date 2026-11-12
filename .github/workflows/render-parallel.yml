@@ -8,15 +8,16 @@ on:
         required: true
         default: "scene.blend"
       render_engine:
-        description: "Render engine"
+        description: "Render engine (AUTO uses the engine set in your .blend file)"
         required: true
-        default: "CYCLES"
+        default: "AUTO"
         type: choice
         options:
-          - CYCLES
+          - AUTO
           - BLENDER_EEVEE
+          - CYCLES
       samples:
-        description: "Render samples (48 is ideal balance with denoising; 64 for maximum quality)"
+        description: "Render samples (48 is ideal balance for Cycles; in EEVEE controls TAA samples)"
         required: true
         default: "48"
       resolution_x:
@@ -32,9 +33,9 @@ on:
         required: true
         default: "1"
       frame_end:
-        description: "End frame (1440 renders the entire animation)"
+        description: "End frame (0 = auto-detect all frames from .blend; or enter e.g. 100, 2000)"
         required: true
-        default: "1440"
+        default: "0"
       fps:
         description: "Frames per second for output MP4"
         required: true
