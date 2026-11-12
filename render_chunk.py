@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """
-Helper script to calculate equal frame slices for 20 parallel matrix workers
-and execute Blender for that specific slice.
-Works dynamically for ANY number of frames (100, 105, 500, 1440, 2000, etc.)
-always distributing workload evenly across all 20 workers.
+Pure parallel chunk renderer for Blender.
+Runs Blender natively with 0 overrides — 100% of your scene settings,
+engine, materials, lights, samples, and resolution are preserved as-is.
 """
 
 import sys
@@ -15,21 +14,17 @@ import subprocess
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Parallel Blender chunk renderer")
-    parser.add_argument("--chunk", type=int, required=True, help="Current worker index (0-based, 0 to 19)")
-    parser.add_argument("--total-chunks", type=int, default=20, help="Total number of parallel workers")
-    parser.add_argument("--frame-start", type=int, default=1, help="Global start frame")
-    parser.add_argument("--frame-end", type=int, default=0, help="Global end frame (0 = auto-detect from .blend)")
+    parser = argparse.ArgumentParser(description="Parallel Blender chunk runner")
+    parser.add_argument("--chunk", type=int, required=True, help="Worker index (0 to 19)")
+    parser.add_argument("--total-chunks", type=int, default=20, help="Total workers")
+    parser.add_argument("--frame-start", type=int, default=1, help="Start frame")
+    parser.add_argument("--frame-end", type=int, default=0, help="End frame (0 = auto-detect)")
     parser.add_argument("--blend-file", type=str, default="scene.blend", help="Path to .blend file")
-    parser.add_argument("--engine", type=str, default="AUTO", help="Render engine (AUTO, CYCLES, BLENDER_EEVEE)")
-    parser.add_argument("--samples", type=int, default=48, help="Sample count")
-    parser.add_argument("--resolution-x", type=int, default=1920, help="Resolution width")
-    parser.add_argument("--resolution-y", type=int, default=1080, help="Resolution height")
     return parser.parse_args()
 
 
 def detect_scene_frames(blend_file):
-    """Auto-detect frame range from .blend file if frame_end is 0 or not provided."""
+    """Auto-detect frame range from .blend file if not specified."""
     blender_bin = shutil.which("blender") or "/Applications/Blender.app/Contents/MacOS/Blender"
     if not os.path.exists(blend_file):
         return 1, 100
@@ -41,22 +36,14 @@ def detect_scene_frames(blend_file):
         )
         m = re.search(r"SCENE_FRAME_RANGE:(\d+):(\d+)", proc.stdout)
         if m:
-            s, e = int(m.group(1)), int(m.group(2))
-            print(f"[Detect] Auto-detected frame range from {blend_file}: {s} to {e}")
-            return s, e
+            return int(m.group(1)), int(m.group(2))
     except Exception as e:
-        print(f"[Detect] Notice: could not auto-detect frame range: {e}")
+        print(f"[Detect] Note: {e}")
     return 1, 100
 
 
 def get_chunk_range(start_frame, end_frame, chunk_idx, total_chunks=20):
-    """
-    Equally distributes ANY number of frames across total_chunks workers.
-    - 100 frames across 20 workers -> exactly 5 frames each.
-    - 2000 frames across 20 workers -> exactly 100 frames each.
-    - 105 frames across 20 workers -> 5 workers get 6, 15 workers get 5.
-    Guarantees no overlaps and every single frame is rendered once.
-    """
+    """Divide total frames equally across 20 workers."""
     total_frames = end_frame - start_frame + 1
     if total_frames <= 0:
         return None, None
@@ -77,7 +64,6 @@ def get_chunk_range(start_frame, end_frame, chunk_idx, total_chunks=20):
 def main():
     args = parse_args()
 
-    # If frame_end is 0, auto-detect from .blend file
     if args.frame_end <= 0:
         auto_start, auto_end = detect_scene_frames(args.blend_file)
         if args.frame_start <= 1:
@@ -93,32 +79,27 @@ def main():
     )
 
     if chunk_start is None:
-        print(f"[Worker {args.chunk + 1}/{args.total_chunks}] No frames assigned (total frames < total workers). Exiting.")
+        print(f"[Worker {args.chunk + 1}/{args.total_chunks}] No frames assigned. Exiting.")
         sys.exit(0)
 
     num_frames = chunk_end - chunk_start + 1
     total_all = args.frame_end - args.frame_start + 1
     print("=" * 60)
     print(f"  Parallel Worker {args.chunk + 1} of {args.total_chunks}")
-    print(f"  Rendering frames: {chunk_start} to {chunk_end} ({num_frames} frames out of {total_all})")
-    print(f"  File: {args.blend_file} | Engine: {args.engine} | Samples: {args.samples}")
+    print(f"  Rendering frames: {chunk_start} to {chunk_end} ({num_frames} of {total_all} frames)")
+    print(f"  File: {args.blend_file} (100% native Blender settings preserved)")
     print("=" * 60)
 
     os.makedirs("output", exist_ok=True)
 
+    # Pure standard Blender CLI render - NO SETTINGS OVERRIDDEN
     cmd = [
         "xvfb-run", "-a", "blender",
-        "--background", args.blend_file,
-        "--python", "render_settings.py",
-        "--",
-        "--engine", args.engine,
-        "--samples", str(args.samples),
-        "--resolution_x", str(args.resolution_x),
-        "--resolution_y", str(args.resolution_y),
-        "--frame_start", str(chunk_start),
-        "--frame_end", str(chunk_end),
-        "--output_format", "PNG",
-        "--output_path", "//output/frame_"
+        "-b", args.blend_file,
+        "-s", str(chunk_start),
+        "-e", str(chunk_end),
+        "-o", "//output/frame_",
+        "-a"
     ]
 
     print(f"Running: {' '.join(cmd)}")

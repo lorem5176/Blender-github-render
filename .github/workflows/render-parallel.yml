@@ -7,33 +7,12 @@ on:
         description: "Path to .blend file (relative to repo root)"
         required: true
         default: "scene.blend"
-      render_engine:
-        description: "Render engine (AUTO uses the engine set in your .blend file)"
-        required: true
-        default: "AUTO"
-        type: choice
-        options:
-          - AUTO
-          - BLENDER_EEVEE
-          - CYCLES
-      samples:
-        description: "Render samples (48 is ideal balance for Cycles; in EEVEE controls TAA samples)"
-        required: true
-        default: "48"
-      resolution_x:
-        description: "Resolution width"
-        required: true
-        default: "1920"
-      resolution_y:
-        description: "Resolution height"
-        required: true
-        default: "1080"
       frame_start:
-        description: "Start frame"
+        description: "Start frame (1 for beginning)"
         required: true
         default: "1"
       frame_end:
-        description: "End frame (0 = auto-detect all frames from .blend; or enter e.g. 100, 2000)"
+        description: "End frame (0 = auto-detect full length from .blend file; or enter e.g. 100, 2000)"
         required: true
         default: "0"
       fps:
@@ -106,19 +85,13 @@ jobs:
           python3 setup_blender.py "${{ github.event.inputs.blend_file }}"
 
       - name: Render frame chunk
-        env:
-          PYTHONUNBUFFERED: "1"
         run: |
           python3 render_chunk.py \
             --chunk ${{ matrix.chunk }} \
             --total-chunks 20 \
             --frame-start ${{ github.event.inputs.frame_start }} \
             --frame-end ${{ github.event.inputs.frame_end }} \
-            --blend-file "${{ github.event.inputs.blend_file }}" \
-            --engine "${{ github.event.inputs.render_engine }}" \
-            --samples ${{ github.event.inputs.samples }} \
-            --resolution-x ${{ github.event.inputs.resolution_x }} \
-            --resolution-y ${{ github.event.inputs.resolution_y }}
+            --blend-file "${{ github.event.inputs.blend_file }}"
 
       - name: Upload chunk frames
         uses: actions/upload-artifact@v4
@@ -148,12 +121,17 @@ jobs:
       - name: Stitch frames to MP4
         run: |
           mkdir -p final_output
-          FRAME_COUNT=$(find downloaded_chunks -name "frame_*.png" | wc -l)
+          FRAME_COUNT=$(find downloaded_chunks -name "frame_*" | wc -l)
           echo "Total frames collected across all 20 workers: ${FRAME_COUNT}"
 
           if [ "${FRAME_COUNT}" -gt 0 ]; then
+            # Find extension of rendered frames (png, exr, jpg, etc.)
+            SAMPLE_FILE=$(find downloaded_chunks -name "frame_*" | head -1)
+            EXT="${SAMPLE_FILE##*.}"
+            echo "Detected frame format: .${EXT}"
+
             ffmpeg -y -framerate "${{ github.event.inputs.fps }}" \
-              -pattern_type glob -i 'downloaded_chunks/frame_*.png' \
+              -pattern_type glob -i "downloaded_chunks/frame_*.${EXT}" \
               -c:v libx264 -pix_fmt yuv420p -crf 18 -preset medium \
               final_output/rendered_animation.mp4
           fi
