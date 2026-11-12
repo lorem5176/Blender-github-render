@@ -32,9 +32,9 @@ on:
         required: true
         default: "1"
       frame_end:
-        description: "End frame"
+        description: "End frame (1440 renders the entire animation)"
         required: true
-        default: "100"
+        default: "1440"
       fps:
         description: "Frames per second for output MP4"
         required: true

@@ -26,6 +26,9 @@ def parse_args():
 def main():
     args = parse_args()
 
+    if args.frame_end <= 0:
+        args.frame_end = 1440
+
     if args.frame_end < args.frame_start:
         print(f"Error: frame_end ({args.frame_end}) < frame_start ({args.frame_start})")
         sys.exit(1)
