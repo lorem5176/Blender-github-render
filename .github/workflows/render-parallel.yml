@@ -106,6 +106,8 @@ jobs:
           python3 setup_blender.py "${{ github.event.inputs.blend_file }}"
 
       - name: Render frame chunk
+        env:
+          PYTHONUNBUFFERED: "1"
         run: |
           python3 render_chunk.py \
             --chunk ${{ matrix.chunk }} \

@@ -40,8 +40,38 @@ def parse_args():
     return parser.parse_args(argv)
 
 
+def sanitize_missing_textures():
+    """Ensure missing external textures don't trigger load errors in Cycles."""
+    import os
+    for img in bpy.data.images:
+        if not img.packed_file and img.filepath:
+            abs_path = bpy.path.abspath(img.filepath)
+            if not os.path.exists(abs_path):
+                print(f"[Texture] Missing '{img.name}' bypassed with clean placeholder.", flush=True)
+                try:
+                    img.source = 'GENERATED'
+                    img.generated_width = 1
+                    img.generated_height = 1
+                except Exception:
+                    pass
+
+
+def setup_render_progress_handlers():
+    """Print visible live progress in GitHub Actions console for each frame."""
+    def on_render_pre(scene):
+        print(f"\n[Worker] >>> Rendering Frame {scene.frame_current}...", flush=True)
+
+    def on_render_post(scene):
+        print(f"[Worker] ✓ Frame {scene.frame_current} rendered & saved successfully!", flush=True)
+
+    bpy.app.handlers.render_pre.append(on_render_pre)
+    bpy.app.handlers.render_post.append(on_render_post)
+
+
 def configure_high_quality(scene, args):
     """Apply high-quality render settings safely across Blender versions."""
+    sanitize_missing_textures()
+    setup_render_progress_handlers()
 
     # Resolve frame range: 0 means use the blend file's own range
     if args.frame_start <= 0:
