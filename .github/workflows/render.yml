@@ -16,11 +16,11 @@ on:
         type: choice
         options:
           - CYCLES
-          - BLENDER_EEVEE_NEXT
+          - BLENDER_EEVEE
       samples:
-        description: "Render samples (higher = better quality, slower)"
+        description: "Render samples (32-64 is fast & clean with denoising; 256 for maximum quality)"
         required: true
-        default: "256"
+        default: "64"
       resolution_x:
         description: "Resolution width"
         required: true
@@ -30,23 +30,17 @@ on:
         required: true
         default: "1080"
       frame_start:
-        description: "Start frame (for animation)"
+        description: "Start frame (1 for beginning)"
         required: true
         default: "1"
       frame_end:
-        description: "End frame (set same as start for single image)"
+        description: "End frame (set 0 to render all frames in scene)"
         required: true
         default: "1"
-      output_format:
-        description: "Output format"
+      fps:
+        description: "Frames per second for output MP4"
         required: true
-        default: "PNG"
-        type: choice
-        options:
-          - PNG
-          - JPEG
-          - OPEN_EXR
-          - FFMPEG
+        default: "24"
 
 jobs:
   render:
@@ -62,12 +56,12 @@ jobs:
         run: |
           echo "blend_file=${{ github.event.inputs.blend_file || 'scene.blend' }}" >> $GITHUB_OUTPUT
           echo "render_engine=${{ github.event.inputs.render_engine || 'CYCLES' }}" >> $GITHUB_OUTPUT
-          echo "samples=${{ github.event.inputs.samples || '256' }}" >> $GITHUB_OUTPUT
+          echo "samples=${{ github.event.inputs.samples || '64' }}" >> $GITHUB_OUTPUT
           echo "resolution_x=${{ github.event.inputs.resolution_x || '1920' }}" >> $GITHUB_OUTPUT
           echo "resolution_y=${{ github.event.inputs.resolution_y || '1080' }}" >> $GITHUB_OUTPUT
           echo "frame_start=${{ github.event.inputs.frame_start || '1' }}" >> $GITHUB_OUTPUT
           echo "frame_end=${{ github.event.inputs.frame_end || '1' }}" >> $GITHUB_OUTPUT
-          echo "output_format=${{ github.event.inputs.output_format || 'PNG' }}" >> $GITHUB_OUTPUT
+          echo "fps=${{ github.event.inputs.fps || '24' }}" >> $GITHUB_OUTPUT
 
       - name: Verify blend file
         run: |
@@ -80,7 +74,7 @@ jobs:
         run: |
           sudo apt-get update || true
           sudo apt-get install -y --fix-missing xvfb libxi6 libxxf86vm1 \
-            libgl1 libglx-mesa0 libxkbcommon0 libsm6 zstd wget xz-utils || true
+            libgl1 libglx-mesa0 libxkbcommon0 libsm6 zstd wget xz-utils ffmpeg || true
 
       - name: Install matching Blender version
         run: |
@@ -102,7 +96,6 @@ jobs:
           echo "  Samples:     ${{ steps.params.outputs.samples }}"
           echo "  Resolution:  ${{ steps.params.outputs.resolution_x }}x${{ steps.params.outputs.resolution_y }}"
           echo "  Frames:      ${{ steps.params.outputs.frame_start }} - ${{ steps.params.outputs.frame_end }}"
-          echo "  Format:      ${{ steps.params.outputs.output_format }}"
           echo "============================================"
 
           xvfb-run -a blender \
@@ -115,8 +108,25 @@ jobs:
             --resolution_y "${{ steps.params.outputs.resolution_y }}" \
             --frame_start "${{ steps.params.outputs.frame_start }}" \
             --frame_end "${{ steps.params.outputs.frame_end }}" \
-            --output_format "${{ steps.params.outputs.output_format }}" \
-            --output_path "//output/render_"
+            --output_format "PNG" \
+            --output_path "//output/frame_"
+
+      - name: Generate MP4 video
+        if: always()
+        run: |
+          FRAME_COUNT=$(find output -name "frame_*.png" | wc -l)
+          echo "Total rendered frames found: ${FRAME_COUNT}"
+
+          if [ "${FRAME_COUNT}" -gt 0 ]; then
+            echo "Assembling MP4 video with ffmpeg at ${{ steps.params.outputs.fps }} fps..."
+            ffmpeg -y -framerate "${{ steps.params.outputs.fps }}" \
+              -pattern_type glob -i 'output/frame_*.png' \
+              -c:v libx264 -pix_fmt yuv420p -crf 18 -preset medium \
+              output/rendered_animation.mp4 || true
+          fi
+
+          echo "Final files in output/:"
+          ls -lh output/
 
       - name: Upload rendered output
         uses: actions/upload-artifact@v4
@@ -138,14 +148,15 @@ jobs:
           echo "| Samples | ${{ steps.params.outputs.samples }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Resolution | ${{ steps.params.outputs.resolution_x }}×${{ steps.params.outputs.resolution_y }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Frames | ${{ steps.params.outputs.frame_start }}–${{ steps.params.outputs.frame_end }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Format | ${{ steps.params.outputs.output_format }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ -f output/rendered_animation.mp4 ]; then
+            echo "🎬 **Animation MP4 generated successfully!**" >> $GITHUB_STEP_SUMMARY
+          fi
 
           if [ -d output ] && [ "$(ls -A output)" ]; then
             FILE_COUNT=$(ls -1 output/ | wc -l)
-            echo "✅ **${FILE_COUNT} file(s) rendered successfully.**" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "Download from the **Artifacts** section above." >> $GITHUB_STEP_SUMMARY
+            echo "✅ **${FILE_COUNT} file(s) produced.** Download the zip in **Artifacts** above." >> $GITHUB_STEP_SUMMARY
           else
-            echo "❌ **No output files were produced.** Check the logs above." >> $GITHUB_STEP_SUMMARY
+            echo "❌ **No output files produced.** Check logs above." >> $GITHUB_STEP_SUMMARY
           fi

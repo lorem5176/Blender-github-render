@@ -43,6 +43,12 @@ def parse_args():
 def configure_high_quality(scene, args):
     """Apply high-quality render settings safely across Blender versions."""
 
+    # Resolve frame range: 0 means use the blend file's own range
+    if args.frame_start <= 0:
+        args.frame_start = scene.frame_start
+    if args.frame_end <= 0:
+        args.frame_end = scene.frame_end
+
     # --- Render engine ---
     try:
         scene.render.engine = args.engine
@@ -56,8 +62,14 @@ def configure_high_quality(scene, args):
     scene.render.resolution_percentage = 100
     print(f"[Config] Resolution: {args.resolution_x}x{args.resolution_y} @ 100%")
 
+    # --- Frame range ---
+    scene.frame_start = args.frame_start
+    scene.frame_end = args.frame_end
+    print(f"[Config] Frame range: {args.frame_start} to {args.frame_end} (total {args.frame_end - args.frame_start + 1} frames)")
+
     # --- Output ---
     scene.render.filepath = args.output_path
+    scene.render.use_file_extension = True
     scene.render.image_settings.file_format = args.output_format
     if args.output_format == "PNG":
         scene.render.image_settings.color_mode = "RGBA"
@@ -166,9 +178,11 @@ def main():
 
     if args.frame_start == args.frame_end:
         scene.frame_set(args.frame_start)
+        scene.render.filepath = f"{args.output_path}{args.frame_start:04d}"
         bpy.ops.render.render(write_still=True)
-        print(f"\n✅ Frame {args.frame_start} rendered successfully!")
+        print(f"\n✅ Frame {args.frame_start} rendered successfully to {scene.render.filepath}!")
     else:
+        scene.render.filepath = args.output_path
         bpy.ops.render.render(animation=True)
         print(f"\n✅ Animation (frames {args.frame_start}-{args.frame_end}) rendered!")
 
