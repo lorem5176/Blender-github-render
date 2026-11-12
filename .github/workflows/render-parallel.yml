@@ -1,4 +1,4 @@
-name: Blender Parallel Render (10x Speed)
+name: Blender Parallel Render (20x Speed)
 
 on:
   workflow_dispatch:
@@ -42,7 +42,7 @@ on:
 
 jobs:
   render-workers:
-    name: Worker ${{ matrix.worker }} of 10
+    name: Worker ${{ matrix.worker }} of 20
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     strategy:
@@ -68,6 +68,26 @@ jobs:
             worker: 9
           - chunk: 9
             worker: 10
+          - chunk: 10
+            worker: 11
+          - chunk: 11
+            worker: 12
+          - chunk: 12
+            worker: 13
+          - chunk: 13
+            worker: 14
+          - chunk: 14
+            worker: 15
+          - chunk: 15
+            worker: 16
+          - chunk: 16
+            worker: 17
+          - chunk: 17
+            worker: 18
+          - chunk: 18
+            worker: 19
+          - chunk: 19
+            worker: 20
       fail-fast: false
 
     steps:
@@ -88,7 +108,7 @@ jobs:
         run: |
           python3 render_chunk.py \
             --chunk ${{ matrix.chunk }} \
-            --total-chunks 10 \
+            --total-chunks 20 \
             --frame-start ${{ github.event.inputs.frame_start }} \
             --frame-end ${{ github.event.inputs.frame_end }} \
             --blend-file "${{ github.event.inputs.blend_file }}" \
@@ -126,7 +146,7 @@ jobs:
         run: |
           mkdir -p final_output
           FRAME_COUNT=$(find downloaded_chunks -name "frame_*.png" | wc -l)
-          echo "Total frames collected across all 10 workers: ${FRAME_COUNT}"
+          echo "Total frames collected across all 20 workers: ${FRAME_COUNT}"
 
           if [ "${FRAME_COUNT}" -gt 0 ]; then
             ffmpeg -y -framerate "${{ github.event.inputs.fps }}" \
@@ -148,7 +168,7 @@ jobs:
       - name: Summary
         if: always()
         run: |
-          echo "## 🚀 10x Parallel Render Complete" >> $GITHUB_STEP_SUMMARY
+          echo "## 🚀 20x Parallel Render Complete" >> $GITHUB_STEP_SUMMARY
           if [ -f final_output/rendered_animation.mp4 ]; then
             echo "✅ **rendered_animation.mp4 successfully created!**" >> $GITHUB_STEP_SUMMARY
             echo "Download it in the **Artifacts** section above." >> $GITHUB_STEP_SUMMARY

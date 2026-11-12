@@ -13,7 +13,7 @@ import subprocess
 def parse_args():
     parser = argparse.ArgumentParser(description="Parallel Blender chunk renderer")
     parser.add_argument("--chunk", type=int, required=True, help="Current worker index (0-based)")
-    parser.add_argument("--total-chunks", type=int, default=10, help="Total number of parallel workers")
+    parser.add_argument("--total-chunks", type=int, default=20, help="Total number of parallel workers")
     parser.add_argument("--frame-start", type=int, default=1, help="Global start frame")
     parser.add_argument("--frame-end", type=int, default=1, help="Global end frame")
     parser.add_argument("--blend-file", type=str, default="scene.blend", help="Path to .blend file")
