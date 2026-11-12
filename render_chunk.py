@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """
-Pure parallel chunk renderer for Blender.
-Supports multiple projects located in the 'Blender Project' folder.
-Runs Blender with custom resolution, fps, and engine settings if specified,
-or uses 100% native project settings.
+Simple and robust parallel chunk renderer for Blender.
+Preserves 100% of your native project settings (resolution, fps, lighting, materials).
+Equally divides frames across all 20 cloud workers.
 """
 
 import sys
@@ -18,33 +17,19 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Parallel Blender chunk runner")
     parser.add_argument("--chunk", type=int, required=True, help="Worker index (0 to 19)")
     parser.add_argument("--total-chunks", type=int, default=20, help="Total workers")
-    parser.add_argument("--frame-start", type=int, default=1, help="Start frame")
-    parser.add_argument("--frame-end", type=int, default=0, help="End frame (0 = auto-detect from file)")
-    parser.add_argument("--blend-file", type=str, default="auto", help="Name or path of .blend project file")
+    parser.add_argument("--blend-file", type=str, default="one.blend", help="Project file name")
     parser.add_argument("--engine", type=str, default="CYCLES", help="Render engine (CYCLES, BLENDER_EEVEE, AUTO)")
-    parser.add_argument("--resolution", type=str, default="AUTO", help="Resolution preset (e.g. 1920x1080, 1080x1920, AUTO)")
-    parser.add_argument("--fps", type=str, default="AUTO", help="FPS preset (e.g. 24 fps, 30 fps, AUTO)")
     return parser.parse_args()
 
 
 def find_blend_file(name_or_path):
-    """
-    Finds .blend file from 'Blender Project/' folder or anywhere in the repo.
-    Accepts:
-      - 'one.blend' or 'one'
-      - 'two.blend' or 'two'
-      - '3.blend' or '3'
-      - 'Blender Project/one.blend'
-      - 'auto' (picks first .blend found in Blender Project/)
-    """
+    """Finds .blend file from 'Blender Project/' folder or anywhere in the repo."""
     if not name_or_path or name_or_path.lower() == "auto":
         name_or_path = ""
 
-    # 1. Direct path
     if name_or_path and os.path.exists(name_or_path):
         return os.path.abspath(name_or_path)
 
-    # 2. Search in 'Blender Project' or 'Blender Projects'
     for folder in ["Blender Project", "Blender Projects", "."]:
         if not os.path.isdir(folder):
             continue
@@ -60,7 +45,6 @@ def find_blend_file(name_or_path):
             if files:
                 return os.path.abspath(files[0])
 
-    # 3. Recursive search
     for root, dirs, files in os.walk("."):
         if ".git" in root or "__pycache__" in root:
             continue
@@ -116,20 +100,10 @@ def main():
     args = parse_args()
 
     blend_path = find_blend_file(args.blend_file)
-    auto_start, auto_end, native_fps, native_rx, native_ry = detect_scene_info(blend_path)
-
-    # Frame range resolution
-    if args.frame_end <= 0:
-        if args.frame_start <= 1:
-            args.frame_start = auto_start
-        args.frame_end = auto_end
-
-    if args.frame_end < args.frame_start:
-        print(f"Error: frame_end ({args.frame_end}) < frame_start ({args.frame_start})")
-        sys.exit(1)
+    frame_start, frame_end, native_fps, rx, ry = detect_scene_info(blend_path)
 
     chunk_start, chunk_end = get_chunk_range(
-        args.frame_start, args.frame_end, args.chunk, args.total_chunks
+        frame_start, frame_end, args.chunk, args.total_chunks
     )
 
     if chunk_start is None:
@@ -137,47 +111,16 @@ def main():
         sys.exit(0)
 
     num_frames = chunk_end - chunk_start + 1
-    total_all = args.frame_end - args.frame_start + 1
-
-    # Resolution resolution
-    res_match = re.search(r"(\d+)x(\d+)", args.resolution)
-    if res_match:
-        target_rx = int(res_match.group(1))
-        target_ry = int(res_match.group(2))
-    else:
-        target_rx = native_rx
-        target_ry = native_ry
-
-    # FPS resolution
-    fps_match = re.search(r"(\d+)", args.fps)
-    target_fps = int(fps_match.group(1)) if fps_match else native_fps
-
-    # Calculated duration
-    duration_sec = total_all / target_fps
-    dur_min = int(duration_sec // 60)
-    dur_sec = int(duration_sec % 60)
-    dur_str = f"{dur_min}m {dur_sec}s" if dur_min > 0 else f"{dur_sec}s"
-
-    print("=" * 65)
+    total_all = frame_end - frame_start + 1
+    print("=" * 60)
     print(f"  🎬 Parallel Worker {args.chunk + 1} of {args.total_chunks}")
     print(f"  Project:    {os.path.basename(blend_path)}")
-    print(f"  Resolution: {target_rx} x {target_ry}")
-    print(f"  FPS:        {target_fps} fps")
-    print(f"  Total Video Length: {dur_str} ({total_all} frames)")
-    print(f"  This Worker: Frames {chunk_start} to {chunk_end} ({num_frames} frames)")
+    print(f"  Frames:     {chunk_start} to {chunk_end} ({num_frames} of {total_all} frames)")
     print(f"  Engine:     {args.engine}")
-    print("=" * 65)
+    print(f"  Resolution: {rx} x {ry} (Native)")
+    print("=" * 60)
 
     os.makedirs("output", exist_ok=True)
-
-    # Prepare python snippet for overrides (if needed)
-    py_overrides = []
-    if res_match:
-        py_overrides.append(f"bpy.context.scene.render.resolution_x = {target_rx}")
-        py_overrides.append(f"bpy.context.scene.render.resolution_y = {target_ry}")
-        py_overrides.append("bpy.context.scene.render.resolution_percentage = 100")
-    if fps_match:
-        py_overrides.append(f"bpy.context.scene.render.fps = {target_fps}")
 
     cmd = [
         "xvfb-run", "-a", "blender",
@@ -188,9 +131,6 @@ def main():
     if args.engine and args.engine.upper() != "AUTO":
         engine_name = "CYCLES" if "CYCLES" in args.engine.upper() else "BLENDER_EEVEE"
         cmd.extend(["-E", engine_name])
-
-    if py_overrides:
-        cmd.extend(["--python-expr", "import bpy; " + "; ".join(py_overrides)])
 
     cmd.extend([
         "-s", str(chunk_start),

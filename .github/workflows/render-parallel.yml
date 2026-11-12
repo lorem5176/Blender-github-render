@@ -8,7 +8,7 @@ on:
         required: true
         default: "one.blend"
       render_engine:
-        description: "Render Engine (CYCLES is maximum quality)"
+        description: "Render Engine (CYCLES for maximum quality, or AUTO for project default)"
         required: true
         default: "CYCLES"
         type: choice
@@ -16,40 +16,6 @@ on:
           - "CYCLES"
           - "BLENDER_EEVEE"
           - "AUTO"
-      resolution:
-        description: "Output Video Resolution"
-        required: true
-        default: "1920x1080 (16:9 Landscape - Full HD)"
-        type: choice
-        options:
-          - "1920x1080 (16:9 Landscape - Full HD)"
-          - "1080x1920 (9:16 Vertical - Shorts / Reels / TikTok)"
-          - "1280x720 (16:9 Landscape - HD 720p)"
-          - "3840x2160 (16:9 Landscape - 4K Ultra HD)"
-          - "1080x1080 (1:1 Square - Instagram Post)"
-          - "AUTO (Keep exact native resolution from .blend file)"
-      fps:
-        description: "Output Video Frame Rate"
-        required: true
-        default: "24 fps (Cinema Standard)"
-        type: choice
-        options:
-          - "24 fps (Cinema Standard)"
-          - "30 fps (Web / TV Video Standard)"
-          - "60 fps (Smooth High-FPS Motion)"
-          - "AUTO (Keep native FPS from .blend file)"
-      frame_start:
-        description: "Start Frame (default: 1)"
-        required: true
-        default: "1"
-      frame_end:
-        description: "End Frame (default: 0 = auto-detect full length from project)"
-        required: true
-        default: "0"
-      duration_guide:
-        description: "⏱️ Duration Guide at 24fps: 24f = 1s | 240f = 10s | 720f = 30s | 1440f = 1 min | 2160f = 1m 30s | 2880f = 2 min | 3600f = 2m 30s"
-        required: false
-        default: "0 = Auto-detects full length and calculates duration"
 
 jobs:
   render-workers:
@@ -115,56 +81,13 @@ jobs:
         run: |
           python3 setup_blender.py "${{ github.event.inputs.blend_file }}"
 
-      - name: Display Project Specs & Calculated Duration
-        run: |
-          python3 -c '
-          import os, re
-          from render_chunk import find_blend_file, detect_scene_info
-
-          blend_path = find_blend_file("${{ github.event.inputs.blend_file }}")
-          s, e, native_fps, native_rx, native_ry = detect_scene_info(blend_path)
-
-          input_start = int("${{ github.event.inputs.frame_start }}" or 1)
-          input_end = int("${{ github.event.inputs.frame_end }}" or 0)
-          final_start = input_start if input_start > 0 else s
-          final_end = input_end if input_end > 0 else e
-          total_frames = final_end - final_start + 1
-
-          fps_match = re.search(r"(\d+)", "${{ github.event.inputs.fps }}")
-          fps = int(fps_match.group(1)) if fps_match else native_fps
-
-          res_match = re.search(r"(\d+)x(\d+)", "${{ github.event.inputs.resolution }}")
-          res = f"{res_match.group(1)} x {res_match.group(2)}" if res_match else f"{native_rx} x {native_ry} (Native)"
-
-          total_sec = total_frames / fps
-          mins = int(total_sec // 60)
-          secs = int(total_sec % 60)
-          dur_str = f"{mins} min {secs} sec" if mins > 0 else f"{secs} sec"
-
-          print("=" * 65)
-          print("  🎬 VIDEO SPECIFICATIONS")
-          print("=" * 65)
-          print(f"  Project File:        {os.path.basename(blend_path)}")
-          print(f"  Render Engine:       ${{ github.event.inputs.render_engine }}")
-          print(f"  Output Resolution:   {res}")
-          print(f"  Output Frame Rate:   {fps} fps")
-          print(f"  Frame Range:         Frames {final_start} to {final_end} ({total_frames} total frames)")
-          print(f"  Output Video Length: {dur_str}")
-          print(f"  Parallel Farm:       20 runners ({total_frames // 20} to {(total_frames // 20) + 1} frames per worker)")
-          print("=" * 65)
-          '
-
       - name: Render frame chunk
         run: |
           python3 render_chunk.py \
             --chunk ${{ matrix.chunk }} \
             --total-chunks 20 \
-            --frame-start ${{ github.event.inputs.frame_start }} \
-            --frame-end ${{ github.event.inputs.frame_end }} \
             --blend-file "${{ github.event.inputs.blend_file }}" \
-            --engine "${{ github.event.inputs.render_engine }}" \
-            --resolution "${{ github.event.inputs.resolution }}" \
-            --fps "${{ github.event.inputs.fps }}"
+            --engine "${{ github.event.inputs.render_engine }}"
 
       - name: Upload chunk frames
         uses: actions/upload-artifact@v4
@@ -202,10 +125,13 @@ jobs:
             EXT="${SAMPLE_FILE##*.}"
             echo "Detected frame format: .${EXT}"
 
+            # Detect native project FPS
             TARGET_FPS=$(python3 -c '
-            import re
-            m = re.search(r"(\d+)", "${{ github.event.inputs.fps }}")
-            print(m.group(1) if m else "24")
+            import re, subprocess, shutil
+            from render_chunk import find_blend_file, detect_scene_info
+            bp = find_blend_file("${{ github.event.inputs.blend_file }}")
+            s, e, fps, rx, ry = detect_scene_info(bp)
+            print(fps)
             ')
             echo "Encoding video at ${TARGET_FPS} fps..."
 
@@ -225,11 +151,10 @@ jobs:
           retention-days: 90
           if-no-files-found: error
 
-      - name: Summary
+      - name: Display Output Video Specifications
         if: always()
         run: |
-          echo "## 🚀 20x Parallel Render Complete" >> $GITHUB_STEP_SUMMARY
-          if [ -f final_output/rendered_animation.mp4 ]; then
-            echo "✅ **rendered_animation.mp4 successfully created!**" >> $GITHUB_STEP_SUMMARY
-            echo "Download it in the **Artifacts** section above." >> $GITHUB_STEP_SUMMARY
-          fi
+          python3 summarize_video.py \
+            final_output/rendered_animation.mp4 \
+            "${{ github.event.inputs.blend_file }}" \
+            "${{ github.event.inputs.render_engine }}"
