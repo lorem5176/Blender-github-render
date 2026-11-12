@@ -69,8 +69,44 @@ def find_download_url(version):
     # Fallback to 5.2.3
     return "https://download.blender.org/release/Blender5.2/blender-5.2.3-linux-x64.tar.xz", "blender-5.2.3-linux-x64.tar.xz"
 
+def find_blend_file(name_or_path):
+    """Resolve .blend file path from Blender Project/ folder or anywhere in repo."""
+    if not name_or_path or name_or_path.lower() == "auto":
+        name_or_path = ""
+
+    if name_or_path and os.path.exists(name_or_path):
+        return os.path.abspath(name_or_path)
+
+    for folder in ["Blender Project", "Blender Projects", "."]:
+        if not os.path.isdir(folder):
+            continue
+        if name_or_path:
+            p1 = os.path.join(folder, name_or_path)
+            if os.path.exists(p1):
+                return os.path.abspath(p1)
+            p2 = os.path.join(folder, name_or_path + ".blend")
+            if os.path.exists(p2):
+                return os.path.abspath(p2)
+        else:
+            files = [os.path.join(folder, f) for f in os.listdir(folder) if f.endswith(".blend")]
+            if files:
+                return os.path.abspath(files[0])
+
+    for root, dirs, files in os.walk("."):
+        if ".git" in root or "__pycache__" in root:
+            continue
+        for f in files:
+            if f.endswith(".blend"):
+                if not name_or_path or f.lower() == name_or_path.lower() or f.lower() == (name_or_path + ".blend").lower():
+                    return os.path.abspath(os.path.join(root, f))
+
+    return "Blender Project/scene.blend"
+
+
 def main():
-    blend_path = sys.argv[1] if len(sys.argv) > 1 else "scene.blend"
+    arg_target = sys.argv[1] if len(sys.argv) > 1 else ""
+    blend_path = find_blend_file(arg_target)
+    print(f"[Project] Target blend file resolved to: {blend_path}")
     version = detect_blend_version(blend_path) if os.path.exists(blend_path) else "5.2"
     url, filename = find_download_url(version)
     

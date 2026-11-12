@@ -4,17 +4,26 @@ on:
   workflow_dispatch:
     inputs:
       blend_file:
-        description: "Path to .blend file (relative to repo root)"
+        description: "Project file name in 'Blender Project' folder (e.g. scene.blend, project2.blend, or 'auto')"
         required: true
-        default: "scene.blend"
+        default: "auto"
       frame_start:
-        description: "Start frame (1 for beginning)"
+        description: "Start frame (default: 1)"
         required: true
         default: "1"
       frame_end:
-        description: "End frame (0 = auto-detect full length from .blend file; or enter e.g. 100, 2000)"
+        description: "End frame (default: 0 to auto-detect full length from blender file)"
         required: true
         default: "0"
+      render_engine:
+        description: "Render engine (default: CYCLES for maximum quality)"
+        required: true
+        default: "CYCLES"
+        type: choice
+        options:
+          - CYCLES
+          - BLENDER_EEVEE
+          - AUTO
       fps:
         description: "Frames per second for output MP4"
         required: true
@@ -91,7 +100,8 @@ jobs:
             --total-chunks 20 \
             --frame-start ${{ github.event.inputs.frame_start }} \
             --frame-end ${{ github.event.inputs.frame_end }} \
-            --blend-file "${{ github.event.inputs.blend_file }}"
+            --blend-file "${{ github.event.inputs.blend_file }}" \
+            --engine "${{ github.event.inputs.render_engine }}"
 
       - name: Upload chunk frames
         uses: actions/upload-artifact@v4
@@ -125,7 +135,6 @@ jobs:
           echo "Total frames collected across all 20 workers: ${FRAME_COUNT}"
 
           if [ "${FRAME_COUNT}" -gt 0 ]; then
-            # Find extension of rendered frames (png, exr, jpg, etc.)
             SAMPLE_FILE=$(find downloaded_chunks -name "frame_*" | head -1)
             EXT="${SAMPLE_FILE##*.}"
             echo "Detected frame format: .${EXT}"
