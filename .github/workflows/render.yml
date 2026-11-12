@@ -85,6 +85,9 @@ jobs:
       - name: Install matching Blender version
         run: |
           python3 setup_blender.py "${{ steps.params.outputs.blend_file }}"
+
+      - name: Verify Blender installation
+        run: |
           blender --version
 
       - name: Render

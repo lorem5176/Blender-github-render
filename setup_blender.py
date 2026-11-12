@@ -86,14 +86,18 @@ def main():
         sys.exit("Error: Could not find extracted blender directory")
     
     blender_dir = os.path.abspath(extracted[0])
+    blender_bin = os.path.join(blender_dir, "blender")
     print(f"[Success] Blender installed in: {blender_dir}")
-    
+
+    # Symlink to /usr/local/bin so it is immediately on PATH everywhere
+    subprocess.run(["sudo", "ln", "-sf", blender_bin, "/usr/local/bin/blender"], check=False)
+
     # Export to GitHub Actions environment
     github_path = os.environ.get("GITHUB_PATH")
     if github_path:
         with open(github_path, "a") as f:
             f.write(f"{blender_dir}\n")
-    
+
     github_env = os.environ.get("GITHUB_ENV")
     if github_env:
         with open(github_env, "a") as f:
