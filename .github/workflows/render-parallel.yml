@@ -145,7 +145,8 @@ jobs:
           GDRIVE_REFRESH_TOKEN: ${{ secrets.GDRIVE_REFRESH_TOKEN }}
           GDRIVE_CLIENT_ID: ${{ secrets.GDRIVE_CLIENT_ID }}
           GDRIVE_CLIENT_SECRET: ${{ secrets.GDRIVE_CLIENT_SECRET }}
-          GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
+          GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID || '15BqDdaLMcOVDVeob6Xg-pQesPSeSIveY' }}
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
         run: |
           python3 upload_to_gdrive.py final_output/rendered_animation.mp4
 

@@ -2,7 +2,7 @@
 """
 Inspects the final rendered MP4 video and writes a clean, detailed
 specification summary for the user in GitHub Actions.
-Includes direct Google Drive view/download link when available.
+Includes direct Google Drive view/download link and destination folder link.
 """
 
 import sys
@@ -41,7 +41,11 @@ def load_metadata(final_output_dir):
     return {}
 
 
-def load_gdrive_link(final_output_dir):
+def load_gdrive_info(final_output_dir):
+    drive_link = ""
+    folder_url = ""
+    file_name = ""
+
     for candidate in [
         os.path.join(final_output_dir, "gdrive_link.txt"),
         "gdrive_link.txt"
@@ -49,12 +53,24 @@ def load_gdrive_link(final_output_dir):
         if os.path.exists(candidate):
             try:
                 with open(candidate, "r") as fp:
-                    link = fp.read().strip()
-                    if link.startswith("http"):
-                        return link
+                    lines = [l.strip() for l in fp.readlines() if l.strip()]
+                    if len(lines) >= 1 and lines[0].startswith("http"):
+                        drive_link = lines[0]
+                    if len(lines) >= 2 and lines[1].startswith("http"):
+                        folder_url = lines[1]
+                    if len(lines) >= 3:
+                        file_name = lines[2]
             except Exception:
                 pass
-    return os.environ.get("GDRIVE_LINK", "").strip()
+            if drive_link:
+                break
+
+    if not drive_link:
+        drive_link = os.environ.get("GDRIVE_LINK", "").strip()
+    if not folder_url:
+        folder_url = os.environ.get("GDRIVE_FOLDER_URL", "https://drive.google.com/drive/folders/15BqDdaLMcOVDVeob6Xg-pQesPSeSIveY").strip()
+
+    return drive_link, folder_url, file_name
 
 
 def main():
@@ -64,7 +80,7 @@ def main():
 
     final_dir = os.path.dirname(video_path) or "final_output"
     meta = load_metadata(final_dir)
-    gdrive_link = load_gdrive_link(final_dir)
+    gdrive_link, folder_url, gdrive_filename = load_gdrive_info(final_dir)
 
     project_name = meta.get("project_name") or (os.path.basename(project_arg) if project_arg != "AUTO" else "Blender Animation")
     engine_name = meta.get("engine") or engine_arg
@@ -145,13 +161,14 @@ Download it from the **Artifacts** section above!
         frames = int(round(duration * fps_float))
 
     dur_str = format_duration(duration)
+    display_video_name = gdrive_filename or os.path.basename(video_path)
 
     summary_text = f"""
 ======================================================================
   🎬 RENDER COMPLETE: OUTPUT VIDEO SPECIFICATIONS
 ======================================================================
   📁 Project File:         {project_name}
-  📁 Video Output File:    {os.path.basename(video_path)}
+  📁 Video Output File:    {display_video_name}
   📐 Resolution:           {width} x {height}
   ⏱️ Duration:             {dur_str} ({duration:.2f}s)
   🎞️ Frame Rate:           {fps} fps
@@ -160,21 +177,23 @@ Download it from the **Artifacts** section above!
   🚀 Render Engine:        {engine_name} (rendered across 20 parallel cloud runners)
 """
     if gdrive_link:
-        summary_text += f"  ☁️ Google Drive Link:   {gdrive_link}\n"
+        summary_text += f"  ☁️ Google Drive Video:  {gdrive_link}\n"
+        summary_text += f"  📂 Rendered Videos:     {folder_url}\n"
     summary_text += "======================================================================\n"
     print(summary_text)
 
     # Markdown table
-    gdrive_row = f"| ☁️ **Google Drive Link** | [**Open & Watch Video**]({gdrive_link}) |\n" if gdrive_link else ""
+    gdrive_row = f"| ☁️ **Google Drive Link** | [**Open & Watch Video**]({gdrive_link}) |\n| 📂 **Destination Folder** | [**Rendered Videos**]({folder_url}) |\n" if gdrive_link else ""
     gdrive_banner = f"""
 ### ☁️ Watch / Download on Google Drive:
-👉 **[Click here to open {os.path.basename(video_path)} on Google Drive]({gdrive_link})**
+👉 **[Click here to open {display_video_name} on Google Drive]({gdrive_link})**  
+📂 **[Open 'Rendered Videos' Folder in Drive]({folder_url})**
 
 ---
 """ if gdrive_link else """
 ---
 ### ☁️ Want automatic Google Drive upload?
-Follow the simple 2-minute setup in `README.md` to connect your Google Drive so all future renders upload directly to your Drive!
+Follow the simple 2-minute setup in `README.md` to connect your Google Drive so all future renders upload directly to your `Rendered Videos` folder!
 
 ---
 """
@@ -185,7 +204,7 @@ Here are the exact specifications of the video rendered by your 20 cloud runners
 
 | Specification | Output Video Detail |
 | :--- | :--- |
-| 📁 **File Name** | `{os.path.basename(video_path)}` |
+| 📁 **File Name** | `{display_video_name}` |
 | 📁 **Source Project** | `{project_name}` |
 | 📐 **Video Resolution** | **{width} × {height}** |
 | ⏱️ **Video Duration** | **{dur_str}** ({duration:.1f}s) |

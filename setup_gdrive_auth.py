@@ -117,8 +117,11 @@ is rendered on GitHub Actions, it automatically uploads directly to your Drive!
         print("❌ Error: Client ID and Client Secret are required.")
         sys.exit(1)
 
-    # Ask for optional folder ID
-    folder_input = input("👉 (Optional) Google Drive Folder ID to upload into (Press ENTER for Drive root): ").strip()
+    # Destination folder ID (pre-configured with user's Rendered Videos folder)
+    default_fid = "15BqDdaLMcOVDVeob6Xg-pQesPSeSIveY"
+    folder_input = input(f"👉 Google Drive Folder ID (Press ENTER for your 'Rendered Videos' folder: {default_fid}): ").strip()
+    if not folder_input:
+        folder_input = default_fid
 
     # Build OAuth URL
     auth_params = {

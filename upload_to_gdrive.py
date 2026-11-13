@@ -3,6 +3,7 @@
 Uploads rendered Blender animations directly to Google Drive.
 Uses standard library urllib (zero third-party dependencies).
 Supports OAuth 2.0 Refresh Tokens for personal (@gmail.com) Google Drive accounts.
+Uploads directly into your designated Google Drive folder.
 """
 
 import sys
@@ -13,13 +14,16 @@ import urllib.request
 import urllib.parse
 import urllib.error
 
+# Default destination folder provided by user: 'Rendered Videos'
+DEFAULT_FOLDER_ID = "15BqDdaLMcOVDVeob6Xg-pQesPSeSIveY"
+
 
 def parse_credentials():
     """Extracts client_id, client_secret, refresh_token, folder_id from env."""
     client_id = os.environ.get("GDRIVE_CLIENT_ID", "").strip()
     client_secret = os.environ.get("GDRIVE_CLIENT_SECRET", "").strip()
     refresh_token = os.environ.get("GDRIVE_REFRESH_TOKEN", "").strip()
-    folder_id = os.environ.get("GDRIVE_FOLDER_ID", "").strip()
+    folder_id = os.environ.get("GDRIVE_FOLDER_ID", "").strip() or DEFAULT_FOLDER_ID
 
     # Check combined secret GDRIVE_CREDENTIALS
     combined = os.environ.get("GDRIVE_CREDENTIALS", "").strip()
@@ -41,6 +45,9 @@ def parse_credentials():
             refresh_token = data.get("refresh_token") or refresh_token
             folder_id = data.get("folder_id") or folder_id
 
+    if not folder_id:
+        folder_id = DEFAULT_FOLDER_ID
+
     if not (client_id and client_secret and refresh_token):
         return None
 
@@ -48,7 +55,7 @@ def parse_credentials():
         "client_id": client_id,
         "client_secret": client_secret,
         "refresh_token": refresh_token,
-        "folder_id": folder_id if folder_id else None
+        "folder_id": folder_id
     }
 
 
@@ -80,10 +87,38 @@ def refresh_access_token(creds):
         return None
 
 
-def upload_file_resumable(access_token, file_path, folder_id=None):
+def get_clean_upload_name(target_file):
+    """Generates a descriptive filename like Lion_run12.mp4 based on project and run number."""
+    final_dir = os.path.dirname(target_file)
+    meta_path = os.path.join(final_dir, "render_metadata.json")
+    base_name = os.path.basename(target_file)
+    ext = os.path.splitext(base_name)[1]
+
+    project_stem = None
+    if os.path.exists(meta_path):
+        try:
+            with open(meta_path, "r") as fp:
+                meta = json.load(fp)
+                pname = meta.get("project_name", "")
+                if pname:
+                    project_stem = os.path.splitext(pname)[0]
+        except Exception:
+            pass
+
+    run_num = os.environ.get("GITHUB_RUN_NUMBER", "").strip()
+    if project_stem:
+        if run_num:
+            return f"{project_stem}_run{run_num}{ext}"
+        return f"{project_stem}_rendered{ext}"
+    elif run_num and base_name == "rendered_animation.mp4":
+        return f"animation_run{run_num}{ext}"
+    return base_name
+
+
+def upload_file_resumable(access_token, file_path, folder_id=None, custom_name=None):
     """Uploads large files in chunks using Google Drive Resumable Upload protocol."""
     file_size = os.path.getsize(file_path)
-    file_name = os.path.basename(file_path)
+    file_name = custom_name or os.path.basename(file_path)
 
     ext = os.path.splitext(file_name)[1].lower()
     if ext == ".mp4":
@@ -125,6 +160,7 @@ def upload_file_resumable(access_token, file_path, folder_id=None):
     chunk_size = 8 * 1024 * 1024
     offset = 0
 
+    print(f"[GDrive] Uploading to Google Drive folder: {folder_id}")
     print(f"[GDrive] Starting upload: {file_name} ({file_size / (1024 * 1024):.2f} MB)...")
 
     with open(file_path, "rb") as fp:
@@ -229,14 +265,17 @@ def main():
         print("⚠️ Warning: Failed to obtain Google Drive access token. Skipping upload.")
         sys.exit(0)
 
-    upload_result = upload_file_resumable(token, target_file, creds["folder_id"])
+    upload_name = get_clean_upload_name(target_file)
+    upload_result = upload_file_resumable(token, target_file, creds["folder_id"], custom_name=upload_name)
     if not upload_result or "id" not in upload_result:
         print("⚠️ Warning: Upload to Google Drive did not complete. Artifact remains in GitHub.")
         sys.exit(0)
 
     file_id = upload_result["id"]
-    file_name = upload_result.get("name", os.path.basename(target_file))
+    file_name = upload_result.get("name", upload_name)
     size_mb = os.path.getsize(target_file) / (1024 * 1024)
+    folder_id = creds["folder_id"]
+    folder_url = f"https://drive.google.com/drive/folders/{folder_id}"
 
     # Make viewable with link
     make_publicly_viewable(token, file_id)
@@ -248,15 +287,17 @@ def main():
 ======================================================================
   📁 File Name:     {file_name}
   💾 File Size:     {size_mb:.2f} MB
-  🔗 Google Drive:  {drive_link}
+  📂 Target Folder: Rendered Videos ({folder_url})
+  🔗 Video Link:    {drive_link}
 ======================================================================
 """)
 
-    # Save link locally so summarize_video.py can include it
-    link_file = os.path.join(os.path.dirname(target_file), "gdrive_link.txt")
+    # Save links locally so summarize_video.py can include them
+    final_dir = os.path.dirname(target_file)
+    link_file = os.path.join(final_dir, "gdrive_link.txt")
     try:
         with open(link_file, "w") as fp:
-            fp.write(drive_link)
+            fp.write(f"{drive_link}\n{folder_url}\n{file_name}")
     except Exception:
         pass
 
@@ -266,7 +307,8 @@ def main():
         with open(summary_env, "a") as fp:
             fp.write(f"""
 ### ☁️ Watch / Download on Google Drive
-👉 **[Open {file_name} in Google Drive]({drive_link})**
+👉 **[Open {file_name} in Google Drive]({drive_link})**  
+📂 **[Open 'Rendered Videos' Folder in Drive]({folder_url})**
 """)
 
     # Export to GitHub Output
@@ -274,6 +316,7 @@ def main():
     if github_output:
         with open(github_output, "a") as fp:
             fp.write(f"drive_link={drive_link}\n")
+            fp.write(f"drive_folder_url={folder_url}\n")
             fp.write(f"drive_file_id={file_id}\n")
 
 
