@@ -2,6 +2,7 @@
 """
 Inspects the final rendered MP4 video and writes a clean, detailed
 specification summary for the user in GitHub Actions.
+Includes direct Google Drive view/download link when available.
 """
 
 import sys
@@ -40,6 +41,22 @@ def load_metadata(final_output_dir):
     return {}
 
 
+def load_gdrive_link(final_output_dir):
+    for candidate in [
+        os.path.join(final_output_dir, "gdrive_link.txt"),
+        "gdrive_link.txt"
+    ]:
+        if os.path.exists(candidate):
+            try:
+                with open(candidate, "r") as fp:
+                    link = fp.read().strip()
+                    if link.startswith("http"):
+                        return link
+            except Exception:
+                pass
+    return os.environ.get("GDRIVE_LINK", "").strip()
+
+
 def main():
     video_path = sys.argv[1] if len(sys.argv) > 1 else "final_output/rendered_animation.mp4"
     project_arg = sys.argv[2] if len(sys.argv) > 2 else "AUTO"
@@ -47,6 +64,7 @@ def main():
 
     final_dir = os.path.dirname(video_path) or "final_output"
     meta = load_metadata(final_dir)
+    gdrive_link = load_gdrive_link(final_dir)
 
     project_name = meta.get("project_name") or (os.path.basename(project_arg) if project_arg != "AUTO" else "Blender Animation")
     engine_name = meta.get("engine") or engine_arg
@@ -140,14 +158,30 @@ Download it from the **Artifacts** section above!
   🖼️ Total Frames:         {frames} frames rendered
   💾 Download File Size:   {size_mb:.2f} MB
   🚀 Render Engine:        {engine_name} (rendered across 20 parallel cloud runners)
-======================================================================
 """
+    if gdrive_link:
+        summary_text += f"  ☁️ Google Drive Link:   {gdrive_link}\n"
+    summary_text += "======================================================================\n"
     print(summary_text)
 
-    # Markdown output for GitHub Actions summary page
+    # Markdown table
+    gdrive_row = f"| ☁️ **Google Drive Link** | [**Open & Watch Video**]({gdrive_link}) |\n" if gdrive_link else ""
+    gdrive_banner = f"""
+### ☁️ Watch / Download on Google Drive:
+👉 **[Click here to open {os.path.basename(video_path)} on Google Drive]({gdrive_link})**
+
+---
+""" if gdrive_link else """
+---
+### ☁️ Want automatic Google Drive upload?
+Follow the simple 2-minute setup in `README.md` to connect your Google Drive so all future renders upload directly to your Drive!
+
+---
+"""
+
     md_summary = f"""# 🎬 Render Complete: Video Information
 
-Here are the exact specifications of the video file you are downloading to your Mac:
+Here are the exact specifications of the video rendered by your 20 cloud runners:
 
 | Specification | Output Video Detail |
 | :--- | :--- |
@@ -159,10 +193,11 @@ Here are the exact specifications of the video file you are downloading to your 
 | 🖼️ **Total Frames Rendered** | **{frames} frames** |
 | 💾 **Video File Size** | **{size_mb:.2f} MB** |
 | 🚀 **Render Engine** | **{engine_name}** (20 parallel cloud runners) |
+{gdrive_row}
 
----
-### ⬇️ How to Download:
-Scroll to the **Artifacts** section at the top of this run and download **`final-animation`**. Inside will be **`{os.path.basename(video_path)}`** ready to play!
+{gdrive_banner}
+### ⬇️ Download via GitHub:
+Scroll to the **Artifacts** section at the top of this run and download **`final-animation`**.
 """
 
     summary_env = os.environ.get("GITHUB_STEP_SUMMARY")

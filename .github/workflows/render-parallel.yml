@@ -138,6 +138,17 @@ jobs:
             final_output \
             "${{ github.event.inputs.blend_file }}"
 
+      - name: Upload to Google Drive
+        continue-on-error: true
+        env:
+          GDRIVE_CREDENTIALS: ${{ secrets.GDRIVE_CREDENTIALS }}
+          GDRIVE_REFRESH_TOKEN: ${{ secrets.GDRIVE_REFRESH_TOKEN }}
+          GDRIVE_CLIENT_ID: ${{ secrets.GDRIVE_CLIENT_ID }}
+          GDRIVE_CLIENT_SECRET: ${{ secrets.GDRIVE_CLIENT_SECRET }}
+          GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
+        run: |
+          python3 upload_to_gdrive.py final_output/rendered_animation.mp4
+
       - name: Upload final video and frames backup
         uses: actions/upload-artifact@v4
         with:
