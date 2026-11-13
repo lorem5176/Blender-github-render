@@ -133,14 +133,27 @@ def main():
         cmd.extend(["-E", engine_name])
 
     cmd.extend([
+        "-F", "PNG",
         "-s", str(chunk_start),
         "-e", str(chunk_end),
         "-o", "//output/frame_",
         "-a"
     ])
 
-    print(f"Running: {' '.join(cmd)}")
-    result = subprocess.run(cmd)
+    # Automatic retry if a worker encounters a transient error
+    max_retries = 2
+    for attempt in range(1, max_retries + 1):
+        print(f"Running (attempt {attempt}/{max_retries}): {' '.join(cmd)}")
+        result = subprocess.run(cmd)
+        if result.returncode == 0:
+            print(f"✅ Chunk {chunk_start}..{chunk_end} rendered successfully!")
+            sys.exit(0)
+        print(f"[Worker] Warning: Attempt {attempt} exited with code {result.returncode}")
+        if attempt < max_retries:
+            import time
+            print("[Worker] Retrying chunk in 5 seconds...")
+            time.sleep(5)
+
     sys.exit(result.returncode)
 
 

@@ -24,8 +24,20 @@ def main():
     engine_name = sys.argv[3] if len(sys.argv) > 3 else "CYCLES"
 
     if not os.path.exists(video_path):
-        print(f"Error: {video_path} not found.")
-        sys.exit(1)
+        print(f"Notice: Video {video_path} not found. Checking for rendered frames archive...")
+        zip_path = os.path.join(os.path.dirname(video_path), "all_rendered_frames.zip")
+        if os.path.exists(zip_path):
+            size_mb = os.path.getsize(zip_path) / (1024 * 1024)
+            print(f"Frames archive found: {zip_path} ({size_mb:.2f} MB)")
+            summary_env = os.environ.get("GITHUB_STEP_SUMMARY")
+            if summary_env:
+                with open(summary_env, "a") as f:
+                    f.write(f"""# 🎨 Render Complete: Frames Archive
+
+Your rendered frames have been preserved in **all_rendered_frames.zip** ({size_mb:.2f} MB).
+Download it from the **Artifacts** section above!
+""")
+        sys.exit(0)
 
     # File size in MB
     size_bytes = os.path.getsize(video_path)

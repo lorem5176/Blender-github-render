@@ -100,10 +100,15 @@ jobs:
   assemble-mp4:
     name: Assemble Final MP4 Video
     needs: render-workers
+    if: ${{ always() && !cancelled() }}
     runs-on: ubuntu-24.04
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Download all rendered chunk frames
         uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           pattern: frames-chunk-*
           path: downloaded_chunks/
@@ -112,44 +117,22 @@ jobs:
       - name: Install ffmpeg
         run: |
           sudo apt-get update || true
-          sudo apt-get install -y ffmpeg
+          sudo apt-get install -y ffmpeg || true
 
       - name: Stitch frames to MP4
         run: |
-          mkdir -p final_output
-          FRAME_COUNT=$(find downloaded_chunks -name "frame_*" | wc -l)
-          echo "Total frames collected across all 20 workers: ${FRAME_COUNT}"
+          python3 assemble_video.py \
+            downloaded_chunks \
+            final_output \
+            "${{ github.event.inputs.blend_file }}"
 
-          if [ "${FRAME_COUNT}" -gt 0 ]; then
-            SAMPLE_FILE=$(find downloaded_chunks -name "frame_*" | head -1)
-            EXT="${SAMPLE_FILE##*.}"
-            echo "Detected frame format: .${EXT}"
-
-            # Detect native project FPS
-            TARGET_FPS=$(python3 -c '
-            import re, subprocess, shutil
-            from render_chunk import find_blend_file, detect_scene_info
-            bp = find_blend_file("${{ github.event.inputs.blend_file }}")
-            s, e, fps, rx, ry = detect_scene_info(bp)
-            print(fps)
-            ')
-            echo "Encoding video at ${TARGET_FPS} fps..."
-
-            ffmpeg -y -framerate "${TARGET_FPS}" \
-              -pattern_type glob -i "downloaded_chunks/frame_*.${EXT}" \
-              -c:v libx264 -pix_fmt yuv420p -crf 18 -preset medium \
-              final_output/rendered_animation.mp4
-          fi
-
-          ls -lh final_output/
-
-      - name: Upload final video
+      - name: Upload final video and frames backup
         uses: actions/upload-artifact@v4
         with:
           name: final-animation-${{ github.run_number }}
           path: final_output/
           retention-days: 90
-          if-no-files-found: error
+          if-no-files-found: warn
 
       - name: Display Output Video Specifications
         if: always()

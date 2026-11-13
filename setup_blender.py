@@ -110,11 +110,28 @@ def main():
     version = detect_blend_version(blend_path) if os.path.exists(blend_path) else "5.2"
     url, filename = find_download_url(version)
     
-    print(f"[Download] Downloading from: {url}")
-    subprocess.run(["wget", "-q", "--show-progress", "--retry-connrefused", "--tries=3", url, "-O", filename], check=True)
-    
-    print("[Extract] Extracting Blender archive...")
-    subprocess.run(["tar", "-xf", filename], check=True)
+    # Retry download and extraction up to 3 times for resilience
+    success = False
+    for attempt in range(1, 4):
+        try:
+            print(f"[Download] Downloading from: {url} (attempt {attempt}/3)...")
+            subprocess.run(["wget", "-q", "--show-progress", "--retry-connrefused", "--tries=3", "--timeout=30", url, "-O", filename], check=True)
+            print("[Extract] Extracting Blender archive...")
+            subprocess.run(["tar", "-xf", filename], check=True)
+            success = True
+            break
+        except Exception as e:
+            print(f"[Setup] Warning on attempt {attempt}: {e}")
+            if os.path.exists(filename):
+                try:
+                    os.remove(filename)
+                except Exception:
+                    pass
+            import time
+            time.sleep(5)
+
+    if not success:
+        sys.exit(f"Error: Failed to download and extract Blender from {url} after 3 attempts.")
     
     # Locate extracted directory
     extracted = [d for d in os.listdir(".") if d.startswith("blender-") and os.path.isdir(d)]
