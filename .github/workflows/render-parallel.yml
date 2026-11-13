@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       blend_file:
-        description: "Project file in 'Blender Project' folder (e.g. one.blend, two.blend, 3.blend)"
+        description: "Project file in 'Blender Project' folder (e.g. Lion.blend, Drift.blend, or AUTO)"
         required: true
-        default: "one.blend"
+        default: "AUTO"
       render_engine:
         description: "Render Engine (CYCLES for maximum quality, or AUTO for project default)"
         required: true
@@ -16,6 +16,9 @@ on:
           - "CYCLES"
           - "BLENDER_EEVEE"
           - "AUTO"
+
+env:
+  PYTHONUNBUFFERED: "1"
 
 jobs:
   render-workers:
@@ -89,13 +92,17 @@ jobs:
             --blend-file "${{ github.event.inputs.blend_file }}" \
             --engine "${{ github.event.inputs.render_engine }}"
 
+      - name: Inspect rendered chunk files
+        run: |
+          ls -la output/ || true
+
       - name: Upload chunk frames
         uses: actions/upload-artifact@v4
         with:
           name: frames-chunk-${{ matrix.chunk }}
           path: output/
           retention-days: 7
-          if-no-files-found: ignore
+          if-no-files-found: warn
 
   assemble-mp4:
     name: Assemble Final MP4 Video
@@ -113,6 +120,11 @@ jobs:
           pattern: frames-chunk-*
           path: downloaded_chunks/
           merge-multiple: true
+
+      - name: Inspect downloaded files
+        run: |
+          mkdir -p downloaded_chunks
+          ls -la downloaded_chunks/ || true
 
       - name: Install ffmpeg
         run: |

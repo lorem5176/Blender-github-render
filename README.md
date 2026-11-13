@@ -8,13 +8,14 @@ Store all your Blender project files inside the **`Blender Project/`** folder:
 
 ```
 ├── Blender Project/
-│   ├── one.blend
-│   ├── two.blend
-│   └── 3.blend
+│   ├── Lion.blend
+│   ├── Drift.blend
+│   └── your_project.blend
 ├── .github/workflows/
 │   └── render-parallel.yml
 ├── render_chunk.py
 ├── setup_blender.py
+├── assemble_video.py
 └── summarize_video.py
 ```
 
@@ -23,7 +24,7 @@ Store all your Blender project files inside the **`Blender Project/`** folder:
 ## How to Render
 
 1. **Add your `.blend` file:**
-   Save or copy your `.blend` file into the `Blender Project/` folder (e.g. `one.blend`).
+   Save or copy your `.blend` file into the `Blender Project/` folder.
    Push to GitHub:
    ```bash
    git add "Blender Project/"
@@ -35,14 +36,14 @@ Store all your Blender project files inside the **`Blender Project/`** folder:
    - Go to your repository on GitHub → **Actions** tab.
    - Click **Blender Parallel Render (20x Speed)** on the left.
    - Click **Run workflow**:
-     - **`blend_file`**: Type the filename (e.g. `one.blend`, `two.blend`, `3.blend`).
+     - **`blend_file`**: Enter the filename (e.g. `Lion.blend`, `Drift.blend`) or leave as **`AUTO`** to automatically render the project in your folder!
      - **`render_engine`**: `CYCLES` (default for maximum quality).
    - Click **Run workflow**.
 
 3. **Check Specifications & Download:**
-   When the run completes, GitHub will display the **Video Information Card**:
+   When the run completes, GitHub displays the **Video Information Card**:
    - 📐 **Resolution** (e.g. 1920×1080)
-   - ⏱️ **Duration** (e.g. 10 sec, 1 min 30 sec)
+   - ⏱️ **Duration** (e.g. 12 sec, 1 min 30 sec)
    - 🎞️ **Frame Rate** (e.g. 24 fps)
    - 💾 **File Size** (e.g. 14 MB)
-   - Download the `.mp4` file directly under the **Artifacts** section!
+   - Download the final **`.mp4`** video (or the raw frames backup zip) directly under the **Artifacts** section!
